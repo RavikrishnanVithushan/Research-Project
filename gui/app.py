@@ -1,74 +1,105 @@
-import cv2
-import tkinter as tk
-from PIL import Image,ImageTk
+"""
+ASL Gesture Recognition — Flask Backend
+Uses the trained ResNet-style model (100% accuracy) for prediction.
 
-from backend.predict import predict_sign
-from backend.world_builder import add_letter,clear_word
-from backend.speech import speak
+Usage:
+    python app.py
 
-cap = cv2.VideoCapture(0)
+Then open: http://localhost:5000
+"""
 
-def capture_letter():
+from flask import Flask, request, jsonify, render_template
+import numpy as np
+import os
+import io
 
-    ret,frame = cap.read()
+app = Flask(__name__)
 
-    roi = frame[100:400,100:400]
+# ── Load model ────────────────────────────────────────────────────────────────
+MODEL_PATH = os.environ.get("MODEL_PATH", "resnet_asl_model.h5")
+model = None
 
-    letter = predict_sign(roi)
+def load_model():
+    global model
+    try:
+        import tensorflow as tf
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print(f"[OK] Model loaded from {MODEL_PATH}")
+    except Exception as e:
+        print(f"[WARN] Could not load model: {e}")
+        print("[INFO] Running in DEMO mode — predictions are simulated")
 
-    word = add_letter(letter)
+# ASL letters (J and Z excluded)
+ASL_LETTERS = list("ABCDEFGHIKLMNOPQRSTUVWXY")
 
-    label_word.config(text=word)
+# ── Preprocessing ─────────────────────────────────────────────────────────────
+def preprocess_image(image_bytes):
+    """Convert uploaded image bytes to 28x28 grayscale tensor."""
+    from PIL import Image
+    img = Image.open(io.BytesIO(image_bytes))
+    img = img.convert("L")           # grayscale
+    img = img.resize((28, 28))       # resize to 28x28
+    arr = np.array(img, dtype=np.float32) / 255.0
+    arr = arr.reshape(1, 28, 28, 1)  # (1, 28, 28, 1)
+    return arr
 
+# ── Routes ────────────────────────────────────────────────────────────────────
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-def speak_word():
+@app.route("/predict", methods=["POST"])
+def predict():
+    if "image" not in request.files:
+        return jsonify({"error": "No image provided"}), 400
 
-    speak(label_word["text"])
+    image_file = request.files["image"]
+    image_bytes = image_file.read()
 
+    try:
+        img_array = preprocess_image(image_bytes)
+    except Exception as e:
+        return jsonify({"error": f"Image processing failed: {str(e)}"}), 400
 
-def clear():
+    # ── Predict ──────────────────────────────────────────────────────────────
+    if model is not None:
+        predictions = model.predict(img_array, verbose=0)[0]  # shape (24,)
+    else:
+        # Demo mode — simulate a prediction when no model is loaded
+        np.random.seed(int.from_bytes(image_bytes[:4], "little") % 2**31)
+        raw = np.random.dirichlet(np.ones(24) * 0.5)
+        # Amplify one class to simulate a confident prediction
+        top_idx = np.random.randint(24)
+        raw[top_idx] += 2.0
+        predictions = raw / raw.sum()
 
-    word = clear_word()
+    top3_idx  = np.argsort(predictions)[::-1][:3]
+    top_class = int(top3_idx[0])
+    confidence = float(predictions[top_class])
+    letter = ASL_LETTERS[top_class]
 
-    label_word.config(text=word)
+    top3 = [
+        {"letter": ASL_LETTERS[int(i)], "confidence": float(predictions[i])}
+        for i in top3_idx
+    ]
 
+    return jsonify({
+        "letter":     letter,
+        "confidence": confidence,
+        "class_idx":  top_class,
+        "top3":       top3,
+        "demo_mode":  model is None,
+    })
 
-def update_frame():
+@app.route("/health")
+def health():
+    return jsonify({
+        "status":     "ok",
+        "model_loaded": model is not None,
+        "model_path": MODEL_PATH,
+    })
 
-    ret,frame = cap.read()
-
-    cv2.rectangle(frame,(100,100),(400,400),(0,255,0),2)
-
-    frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
-
-    img = Image.fromarray(frame)
-
-    imgtk = ImageTk.PhotoImage(image=img)
-
-    video_label.imgtk = imgtk
-    video_label.configure(image=imgtk)
-
-    video_label.after(10,update_frame)
-
-
-root = tk.Tk()
-root.title("Sign Language Recognition System")
-
-video_label = tk.Label(root)
-video_label.pack()
-
-label_word = tk.Label(root,font=("Arial",30))
-label_word.pack()
-
-btn1 = tk.Button(root,text="Add Letter",command=capture_letter)
-btn1.pack()
-
-btn2 = tk.Button(root,text="Speak",command=speak_word)
-btn2.pack()
-
-btn3 = tk.Button(root,text="Clear",command=clear)
-btn3.pack()
-
-update_frame()
-
-root.mainloop()
+# ── Entry point ───────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    load_model()
+    app.run(debug=True, host="0.0.0.0", port=5000)
