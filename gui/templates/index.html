@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASL Gesture Recognition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #0D1B4B;
+      --teal:   #0D9488;
+      --lteal:  #14B8A6;
+      --gold:   #F59E0B;
+      --dark:   #060D26;
+      --card:   #111C45;
+      --border: rgba(13,148,136,0.3);
+      --white:  #FFFFFF;
+      --gray:   #94A3B8;
+      --lgray:  #CBD5E1;
+    }
+
+    body {
+      background: var(--dark);
+      color: var(--white);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Background grid pattern */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(13,148,136,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(13,148,136,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Glow orbs */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -200px; left: -200px;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(13,148,136,0.12) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .glow-orb-right {
+      position: fixed;
+      bottom: -150px; right: -150px;
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(245,158,11,0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Header */
+    header {
+      position: relative; z-index: 10;
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+      background: rgba(6,13,38,0.8);
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: var(--teal);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .logo-text {
+      font-size: 18px; font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .logo-text span { color: var(--teal); }
+
+    .header-badge {
+      background: rgba(13,148,136,0.15);
+      border: 1px solid var(--border);
+      color: var(--lteal);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      letter-spacing: 1px;
+    }
+
+    /* Main layout */
+    main {
+      position: relative; z-index: 10;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 24px 60px;
+    }
+
+    .page-title {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .page-title h1 {
+      font-size: clamp(28px, 4vw, 48px);
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.1;
+    }
+    .page-title h1 span { color: var(--teal); }
+    .page-title p {
+      color: var(--gray);
+      font-size: 14px;
+      margin-top: 8px;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 0.5px;
+    }
+
+    /* Main grid */
+    .app-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 24px;
+      margin-top: 36px;
+      align-items: start;
+    }
+
+    /* Camera panel */
+    .camera-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(13,148,136,0.06);
+    }
+    .panel-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .dot-red   { background: #EF4444; }
+    .dot-amber { background: #F59E0B; }
+    .dot-green { background: #22C55E; }
+    .panel-title {
+      font-size: 12px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase;
+      color: var(--gray); margin-left: 8px;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .camera-container {
+      position: relative;
+      aspect-ratio: 4/3;
+      background: #050B1F;
+      overflow: hidden;
+    }
+
+    #video, #canvas-display {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    #canvas-display {
+      position: absolute; top: 0; left: 0;
+      display: none;
+    }
+
+    /* Scan line animation */
+    .scan-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--teal), transparent);
+      opacity: 0;
+      animation: scan 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes scan {
+      0%   { top: 0%;   opacity: 0; }
+      10%  { opacity: 0.8; }
+      90%  { opacity: 0.8; }
+      100% { top: 100%; opacity: 0; }
+    }
+
+    /* Corner brackets */
+    .corner {
+      position: absolute;
+      width: 24px; height: 24px;
+      pointer-events: none;
+    }
+    .corner-tl { top: 12px; left: 12px; border-top: 2px solid var(--teal); border-left: 2px solid var(--teal); }
+    .corner-tr { top: 12px; right: 12px; border-top: 2px solid var(--teal); border-right: 2px solid var(--teal); }
+    .corner-bl { bottom: 12px; left: 12px; border-bottom: 2px solid var(--teal); border-left: 2px solid var(--teal); }
+    .corner-br { bottom: 12px; right: 12px; border-bottom: 2px solid var(--teal); border-right: 2px solid var(--teal); }
+
+    /* Status badge */
+    .status-badge {
+      position: absolute; top: 14px; right: 50px;
+      background: rgba(6,13,38,0.85);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--gray);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--gray);
+    }
+    .status-dot.live { background: #22C55E; animation: pulse-dot 1.5s infinite; }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .camera-controls {
+      padding: 16px 20px;
+      display: flex; gap: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 16px;
+      border: none; border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-size: 13px; font-weight: 700;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--teal);
+      color: var(--dark);
+    }
+    .btn-primary:hover { background: var(--lteal); }
+    .btn-primary:disabled { background: rgba(13,148,136,0.3); color: var(--gray); cursor: not-allowed; }
+
+    .btn-capture {
+      background: var(--gold);
+      color: var(--dark);
+    }
+    .btn-capture:hover { background: #FBBF24; }
+    .btn-capture:disabled { background: rgba(245,158,11,0.3); color: var(--gray); cursor: not-allowed; }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.06);
+      color: var(--lgray);
+      border: 1px solid var(--border);
+      flex: 0.6;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+
+    /* Result panel */
+    .result-panel {
+      display: flex; flex-direction: column; gap: 16px;
+    }
+
+    .prediction-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .prediction-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--teal), var(--gold));
+    }
+
+    .prediction-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; letter-spacing: 2px;
+      color: var(--gray); text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .prediction-letter {
+      font-size: 96px; font-weight: 800;
+      line-height: 1;
+      color: var(--teal);
+      letter-spacing: -4px;
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      min-height: 100px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .prediction-letter.pop {
+      animation: letter-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes letter-pop {
+      0%   { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1);   opacity: 1; }
+    }
+    .prediction-letter.placeholder { color: rgba(13,148,136,0.2); }
+
+    .confidence-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 12px;
+    }
+    .confidence-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--gray);
+      white-space: nowrap;
+    }
+    .confidence-bar-bg {
+      flex: 1; height: 5px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 3px; overflow: hidden;
+    }
+    .confidence-bar-fill {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--teal), var(--gold));
+      width: 0%;
+      transition: width 0.6s ease;
+    }
+    .confidence-value {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; color: var(--gold);
+      font-weight: 500; min-width: 36px; text-align: right;
+    }
+
+    /* Top-3 predictions */
+    .top3-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 20px;
+    }
+    .top3-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; letter-spacing: 2px;
+      color: var(--gray); text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .top3-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .top3-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .top3-rank {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--gray);
+      width: 20px;
+    }
+    .top3-letter {
+      font-size: 20px; font-weight: 800;
+      width: 28px; color: var(--white);
+    }
+    .top3-bar-bg {
+      flex: 1; height: 4px;
+      background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden;
+    }
+    .top3-bar-fill {
+      height: 100%; border-radius: 2px;
+      transition: width 0.5s ease;
+    }
+    .top3-pct {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--gray);
+      width: 38px; text-align: right;
+    }
+
+    /* Word builder */
+    .word-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 20px;
+    }
+    .word-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; letter-spacing: 2px;
+      color: var(--gray); text-transform: uppercase;
+      margin-bottom: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .word-display {
+      min-height: 48px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-family: 'DM Mono', monospace;
+      font-size: 22px; font-weight: 500;
+      color: var(--white);
+      letter-spacing: 4px;
+      word-break: break-all;
+    }
+    .word-display.empty { color: rgba(255,255,255,0.15); font-size: 14px; letter-spacing: 1px; }
+
+    .word-actions {
+      display: flex; gap: 8px; margin-top: 10px;
+    }
+    .btn-word {
+      flex: 1; padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      color: var(--lgray);
+      font-family: 'Syne', sans-serif;
+      font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all 0.2s;
+      letter-spacing: 0.5px;
+    }
+    .btn-word:hover { background: rgba(255,255,255,0.08); }
+    .btn-word.danger { color: #EF4444; border-color: rgba(239,68,68,0.3); }
+    .btn-word.danger:hover { background: rgba(239,68,68,0.08); }
+
+    /* Model info */
+    .model-info {
+      background: rgba(13,148,136,0.06);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .model-icon {
+      width: 36px; height: 36px;
+      background: rgba(13,148,136,0.15);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .model-name {
+      font-size: 13px; font-weight: 700; color: var(--lteal);
+    }
+    .model-acc {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--gray); margin-top: 2px;
+    }
+
+    /* Processing overlay */
+    .processing-overlay {
+      position: absolute; inset: 0;
+      background: rgba(6,13,38,0.85);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+      backdrop-filter: blur(4px);
+    }
+    .processing-overlay.active { display: flex; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(13,148,136,0.2);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .processing-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px; color: var(--lteal); letter-spacing: 2px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px; color: var(--lteal);
+      letter-spacing: 1px;
+      transition: transform 0.3s ease;
+      z-index: 100;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* Instructions */
+    .instructions {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 20px;
+      margin-top: 0;
+    }
+    .instructions-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; letter-spacing: 2px;
+      color: var(--gray); text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .step-list {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .step {
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .step-num {
+      width: 20px; height: 20px;
+      background: rgba(13,148,136,0.15);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--teal);
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-text { font-size: 12px; color: var(--gray); line-height: 1.5; }
+    .step-text strong { color: var(--lgray); }
+
+    /* Error state */
+    .error-msg {
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; color: #EF4444;
+      display: none;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .app-grid { grid-template-columns: 1fr; }
+      header { padding: 14px 20px; }
+      main { padding: 24px 16px 40px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="glow-orb-right"></div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">✋</div>
+    <div class="logo-text">ASL<span>Vision</span></div>
+  </div>
+  <div class="header-badge">RESNET · 100% ACCURACY</div>
+</header>
+
+<main>
+  <div class="page-title">
+    <h1>Hand Gesture <span>Recognition</span></h1>
+    <p>CFPL 1.0 · Colins Football Premier League · ResNet Deep Learning Backend</p>
+  </div>
+
+  <div class="app-grid">
+
+    <!-- Camera Panel -->
+    <div class="camera-panel">
+      <div class="panel-header">
+        <div class="panel-dot dot-red"></div>
+        <div class="panel-dot dot-amber"></div>
+        <div class="panel-dot dot-green"></div>
+        <span class="panel-title">Webcam Feed</span>
+      </div>
+      <div class="camera-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas-display"></canvas>
+        <div class="scan-line" id="scanLine"></div>
+        <div class="corner corner-tl"></div>
+        <div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div>
+        <div class="corner corner-br"></div>
+        <div class="status-badge">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">OFFLINE</span>
+        </div>
+        <div class="processing-overlay" id="processingOverlay">
+          <div class="spinner"></div>
+          <div class="processing-text">ANALYSING...</div>
+        </div>
+      </div>
+      <div class="camera-controls">
+        <button class="btn btn-primary" id="btnStart" onclick="startCamera()">
+          <span>▶</span> Start Camera
+        </button>
+        <button class="btn btn-capture" id="btnCapture" onclick="captureAndPredict()" disabled>
+          <span>◎</span> Capture & Predict
+        </button>
+        <button class="btn btn-secondary" id="btnReset" onclick="resetCamera()">↺</button>
+      </div>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="result-panel">
+
+      <!-- Model info -->
+      <div class="model-info">
+        <div class="model-icon">🧠</div>
+        <div>
+          <div class="model-name">ResNet-style Architecture</div>
+          <div class="model-acc">Skip connections · 100% test accuracy · 28×28 input</div>
+        </div>
+      </div>
+
+      <!-- Prediction -->
+      <div class="prediction-card">
+        <div class="prediction-label">Predicted Letter</div>
+        <div class="prediction-letter placeholder" id="predLetter">?</div>
+        <div class="confidence-row">
+          <div class="confidence-label">Confidence</div>
+          <div class="confidence-bar-bg">
+            <div class="confidence-bar-fill" id="confBar"></div>
+          </div>
+          <div class="confidence-value" id="confValue">—</div>
+        </div>
+      </div>
+
+      <!-- Top 3 -->
+      <div class="top3-card">
+        <div class="top3-title">Top 3 Predictions</div>
+        <div id="top3List">
+          <div class="top3-item">
+            <div class="top3-rank">#1</div>
+            <div class="top3-letter" style="color:var(--teal)">—</div>
+            <div class="top3-bar-bg"><div class="top3-bar-fill" style="width:0%;background:var(--teal)"></div></div>
+            <div class="top3-pct">—</div>
+          </div>
+          <div class="top3-item">
+            <div class="top3-rank">#2</div>
+            <div class="top3-letter" style="color:var(--lgray)">—</div>
+            <div class="top3-bar-bg"><div class="top3-bar-fill" style="width:0%;background:var(--lgray)"></div></div>
+            <div class="top3-pct">—</div>
+          </div>
+          <div class="top3-item">
+            <div class="top3-rank">#3</div>
+            <div class="top3-letter" style="color:var(--gray)">—</div>
+            <div class="top3-bar-bg"><div class="top3-bar-fill" style="width:0%;background:var(--gray)"></div></div>
+            <div class="top3-pct">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Word Builder -->
+      <div class="word-card">
+        <div class="word-title">
+          <span>Word Builder</span>
+          <span style="color:var(--teal);font-size:9px">AUTO-APPEND ON CAPTURE</span>
+        </div>
+        <div class="word-display empty" id="wordDisplay">Start capturing letters...</div>
+        <div class="word-actions">
+          <button class="btn-word" onclick="addSpace()">+ Space</button>
+          <button class="btn-word" onclick="backspace()">⌫ Delete</button>
+          <button class="btn-word danger" onclick="clearWord()">✕ Clear</button>
+        </div>
+      </div>
+
+      <!-- Instructions -->
+      <div class="instructions">
+        <div class="instructions-title">How to Use</div>
+        <div class="step-list">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-text"><strong>Start Camera</strong> — Allow webcam access when prompted</div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-text"><strong>Position Hand</strong> — Show an ASL letter gesture in the frame</div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-text"><strong>Capture</strong> — Click to capture and predict the letter</div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-text"><strong>Build Words</strong> — Letters append automatically to the word builder</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- Hidden canvas for capture -->
+<canvas id="captureCanvas" style="display:none"></canvas>
+
+<script>
+  let stream = null;
+  let lastLetter = null;
+  let currentWord = '';
+  const ASL_LETTERS = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
+
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+      });
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusText').textContent = 'LIVE';
+      document.getElementById('btnCapture').disabled = false;
+      document.getElementById('btnStart').disabled = true;
+      document.getElementById('scanLine').style.display = 'block';
+      hideError();
+    } catch (err) {
+      showError('Camera access denied. Please allow webcam permissions and try again.');
+    }
+  }
+
+  async function captureAndPredict() {
+    const video = document.getElementById('video');
+    const captureCanvas = document.getElementById('captureCanvas');
+    const displayCanvas = document.getElementById('canvas-display');
+
+    captureCanvas.width  = video.videoWidth  || 640;
+    captureCanvas.height = video.videoHeight || 480;
+    displayCanvas.width  = captureCanvas.width;
+    displayCanvas.height = captureCanvas.height;
+
+    const ctx = captureCanvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+
+    // Show captured frame
+    const dctx = displayCanvas.getContext('2d');
+    dctx.drawImage(captureCanvas, 0, 0);
+    displayCanvas.style.display = 'block';
+
+    // Show processing
+    document.getElementById('processingOverlay').classList.add('active');
+    document.getElementById('btnCapture').disabled = true;
+
+    try {
+      const blob = await new Promise(res => captureCanvas.toBlob(res, 'image/jpeg', 0.9));
+      const formData = new FormData();
+      formData.append('image', blob, 'capture.jpg');
+
+      const response = await fetch('/predict', { method: 'POST', body: formData });
+      const data = await response.json();
+
+      if (data.error) {
+        showError(data.error);
+      } else {
+        showPrediction(data);
+        // Auto-append to word builder (deduplicate consecutive)
+        if (data.letter !== lastLetter) {
+          appendToWord(data.letter);
+          lastLetter = data.letter;
+        }
+      }
+    } catch (err) {
+      showError('Could not connect to prediction server. Make sure the Flask backend is running.');
+    } finally {
+      document.getElementById('processingOverlay').classList.remove('active');
+      document.getElementById('btnCapture').disabled = false;
+    }
+  }
+
+  function showPrediction(data) {
+    // Main letter
+    const letterEl = document.getElementById('predLetter');
+    letterEl.textContent = data.letter;
+    letterEl.classList.remove('placeholder', 'pop');
+    void letterEl.offsetWidth;
+    letterEl.classList.add('pop');
+
+    // Confidence
+    const conf = Math.round(data.confidence * 100);
+    document.getElementById('confBar').style.width = conf + '%';
+    document.getElementById('confValue').textContent = conf + '%';
+
+    // Top 3
+    const top3 = data.top3 || [];
+    const colors = ['var(--teal)', 'var(--lgray)', 'var(--gray)'];
+    const items  = document.querySelectorAll('#top3List .top3-item');
+    top3.forEach((pred, i) => {
+      if (!items[i]) return;
+      const pct = Math.round(pred.confidence * 100);
+      items[i].querySelector('.top3-letter').textContent = pred.letter;
+      items[i].querySelector('.top3-bar-fill').style.width  = pct + '%';
+      items[i].querySelector('.top3-bar-fill').style.background = colors[i];
+      items[i].querySelector('.top3-pct').textContent = pct + '%';
+    });
+  }
+
+  function appendToWord(letter) {
+    currentWord += letter;
+    updateWordDisplay();
+    showToast('Letter "' + letter + '" added');
+  }
+
+  function updateWordDisplay() {
+    const el = document.getElementById('wordDisplay');
+    if (currentWord.length === 0) {
+      el.textContent = 'Start capturing letters...';
+      el.classList.add('empty');
+    } else {
+      el.textContent = currentWord;
+      el.classList.remove('empty');
+    }
+  }
+
+  function addSpace()  { currentWord += ' '; lastLetter = null; updateWordDisplay(); }
+  function backspace() { currentWord = currentWord.slice(0, -1); updateWordDisplay(); }
+  function clearWord() { currentWord = ''; lastLetter = null; updateWordDisplay(); showToast('Word cleared'); }
+
+  function resetCamera() {
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    const video = document.getElementById('video');
+    video.srcObject = null;
+    document.getElementById('canvas-display').style.display = 'none';
+    document.getElementById('statusDot').classList.remove('live');
+    document.getElementById('statusText').textContent = 'OFFLINE';
+    document.getElementById('btnCapture').disabled = true;
+    document.getElementById('btnStart').disabled = false;
+    hideError();
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = '⚠ ' + msg;
+    el.style.display = 'block';
+  }
+  function hideError() {
+    document.getElementById('errorMsg').style.display = 'none';
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }
+</script>
+</body>
+</html>
